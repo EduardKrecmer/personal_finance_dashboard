@@ -1,0 +1,160 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  background: #020617;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+/* ── Login page — entrance animations ── */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes breatheGlow {
+  0%, 100% { box-shadow: 0 0 20px rgba(16,185,129,0.2), 0 20px 40px rgba(16,185,129,0.1); }
+  50%      { box-shadow: 0 0 40px rgba(16,185,129,0.4), 0 20px 50px rgba(16,185,129,0.2); }
+}
+@keyframes floatOrb {
+  0%, 100% { transform: translate(0, 0); }
+  50%      { transform: translate(30px, -20px); }
+}
+.login-enter-1 { opacity: 0; animation: fadeSlideUp 0.6s ease-out 0.1s forwards; }
+.login-enter-2 { opacity: 0; animation: fadeSlideUp 0.6s ease-out 0.25s forwards; }
+.login-enter-3 { opacity: 0; animation: fadeSlideUp 0.6s ease-out 0.4s forwards; }
+.login-enter-4 { opacity: 0; animation: fadeSlideUp 0.6s ease-out 0.55s forwards; }
+.login-enter-5 { opacity: 0; animation: fadeSlideUp 0.6s ease-out 0.7s forwards; }
+.login-glow    { animation: breatheGlow 3s ease-in-out infinite; }
+.login-orb     { animation: floatOrb 8s ease-in-out infinite; }
+.login-orb-2   { animation: floatOrb 10s ease-in-out 2s infinite; }
+.login-orb-3   { animation: floatOrb 12s ease-in-out 4s infinite; }
+.login-quote   { opacity: 0; animation: fadeSlideUp 1.2s ease-out 1s forwards; }
+
+/* Chart reveal animation — left-to-right wipe */
+@keyframes revealChart {
+  0%   { clip-path: inset(0 100% 0 0); }
+  99%  { clip-path: inset(0 0% 0 0); }
+  100% { clip-path: none; }
+}
+
+.chart-reveal {
+  animation: revealChart 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Chart labels fade in after line draws */
+@keyframes labelFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.chart-label-fade {
+  opacity: 0;
+  animation: labelFadeIn 0.5s ease-out 0.9s forwards;
+}
+
+/* ── Export compact mode — celý dashboard na 1 A4 ── */
+[data-export-compact] {
+  padding: 6px !important;
+  max-width: none !important;
+}
+[data-export-compact] *,
+[data-export-compact] *::before,
+[data-export-compact] *::after {
+  transition: none !important;
+  animation: none !important;
+}
+/* Sekcie pod sebou – minimálne medzery */
+[data-export-compact] > * + * { margin-top: 4px !important; }
+/* Gridy */
+[data-export-compact] [class~="gap-6"] { gap: 4px !important; }
+[data-export-compact] [class~="gap-4"] { gap: 3px !important; }
+[data-export-compact] [class~="gap-3"] { gap: 2px !important; }
+[data-export-compact] [class~="gap-2"] { gap: 2px !important; }
+/* space-y */
+[data-export-compact] [class~="space-y-6"] > * + * { margin-top: 4px !important; }
+[data-export-compact] [class~="space-y-4"] > * + * { margin-top: 3px !important; }
+[data-export-compact] [class~="space-y-3"] > * + * { margin-top: 2px !important; }
+[data-export-compact] [class~="space-y-2"] > * + * { margin-top: 1px !important; }
+/* Padding – karty a sekcie */
+[data-export-compact] [class~="p-5"] { padding: 5px !important; }
+[data-export-compact] [class~="p-4"] { padding: 4px !important; }
+[data-export-compact] [class~="p-3"] { padding: 3px !important; }
+[data-export-compact] [class~="px-5"] { padding-left: 6px !important; padding-right: 6px !important; }
+[data-export-compact] [class~="px-4"] { padding-left: 5px !important; padding-right: 5px !important; }
+[data-export-compact] [class~="py-6"] { padding-top: 4px !important; padding-bottom: 4px !important; }
+[data-export-compact] [class~="py-4"] { padding-top: 3px !important; padding-bottom: 3px !important; }
+[data-export-compact] [class~="pb-5"] { padding-bottom: 4px !important; }
+/* Margin reductions */
+[data-export-compact] [class~="mb-4"],
+[data-export-compact] [class~="mb-3"] { margin-bottom: 2px !important; }
+[data-export-compact] [class~="mt-4"],
+[data-export-compact] [class~="mt-3"],
+[data-export-compact] [class~="mt-2"] { margin-top: 2px !important; }
+/* Fonty – mierne menšie */
+[data-export-compact] [class~="text-2xl"] { font-size: 13px !important; line-height: 1.1 !important; }
+[data-export-compact] [class~="text-xl"] { font-size: 11px !important; line-height: 1.1 !important; }
+[data-export-compact] [class~="text-lg"] { font-size: 10px !important; line-height: 1.1 !important; }
+[data-export-compact] [class~="text-base"] { font-size: 10px !important; }
+[data-export-compact] [class~="text-sm"] { font-size: 9px !important; }
+[data-export-compact] [class~="text-xs"] { font-size: 8px !important; }
+/* Ikony menšie */
+[data-export-compact] [class~="w-10"] { width: 24px !important; height: 24px !important; }
+[data-export-compact] [class~="h-10"] { width: 24px !important; height: 24px !important; }
+/* Zaoblenie menšie */
+[data-export-compact] [class~="rounded-2xl"] { border-radius: 6px !important; }
+[data-export-compact] [class~="rounded-xl"] { border-radius: 4px !important; }
+/* Chart výška */
+[data-export-compact] svg[viewBox] { max-height: 100px !important; }
+/* Textarea skryť */
+[data-export-compact] textarea { height: 24px !important; min-height: 24px !important; font-size: 8px !important; }
+/* Schované interakčné prvky */
+[data-export-compact] [class~="cursor-grab"] { display: none !important; }
+
+/* ── Print styles — celý report na jednu A4 stranu ── */
+@media print {
+  @page {
+    size: A4;
+    margin: 8mm 10mm;
+  }
+
+  body {
+    margin: 0 !important;
+    background: white !important;
+    color: #1e293b !important;
+    font-size: 10px !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .print-hidden {
+    display: none !important;
+  }
+
+  /* Hide modals/overlays on print */
+  .fixed {
+    display: none !important;
+  }
+
+  .print-report {
+    display: block !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+
+  .print-report * {
+    overflow: visible !important;
+    max-height: none !important;
+  }
+
+  .print-report > div {
+    page-break-inside: avoid;
+  }
+}
