@@ -4,7 +4,7 @@ import {
   Settings, Flag, ArrowUp, ArrowDown, FileText, Save, Check, RotateCcw,
   Printer, Moon, Sun, Download, Upload, BarChart3, PieChart, Calendar,
   Clock, Edit, Box, ChevronRight, GripVertical, Coins, Repeat, Bell,
-  AlertTriangle, TrendingDown, LogOut, Mail, Lock, Eye, EyeOff, Loader2, Camera, Image, MessageSquare, ArrowUpDown
+  AlertTriangle, TrendingDown, LogOut, Mail, Lock, Eye, EyeOff, Loader2, Camera, Image, MessageSquare, ArrowUpDown, ArrowLeftRight
 } from "lucide-react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
@@ -198,10 +198,12 @@ const SelectWithDelete = ({value, onChange, options, onDelete, dark, className, 
   );
 };
 
-const AreaChart = memo(({data, dark: dk}) => {
+const AreaChart = memo(({data, dark: dk, onCompare, compareDate}) => {
   const [hover, setHover] = useState(null);
   const [range, setRange] = useState("ALL");
   const [animKey, setAnimKey] = useState(0);
+  const [compareIdx, setCompareIdx] = useState(null);
+  const [compareMenu, setCompareMenu] = useState(false);
   const ref = useRef(null);
 
   /* ── Časový filter ── */
@@ -216,6 +218,13 @@ const AreaChart = memo(({data, dark: dk}) => {
   }, [data, range]);
 
   useEffect(() => { setAnimKey(k => k + 1); }, [range]);
+
+  /* ── Sync compareIdx s compareDate z vonku ── */
+  useEffect(() => {
+    if (!compareDate || !filtered.length) { setCompareIdx(null); return; }
+    const idx = filtered.findIndex(d => d.date === compareDate);
+    setCompareIdx(idx >= 0 ? idx : null);
+  }, [compareDate, filtered]);
 
   /* ── Prázdny / 1 záznam ── */
   if (!data || data.length === 0) return (
@@ -250,11 +259,13 @@ const AreaChart = memo(({data, dark: dk}) => {
   const gY = v => 100 - ((v - cMin) / rng) * 100;
 
   /* ── Farba podľa trendu ── */
+  const refIdx = compareIdx != null ? compareIdx : 0;
+  const refVal = filtered[refIdx].value;
   const f0 = filtered[0].value, fN = filtered[filtered.length - 1].value;
-  const up = fN >= f0;
+  const up = fN >= refVal;
   const clr = up ? "#10b981" : "#ef4444";
-  const totalDiff = fN - f0;
-  const totalPct = f0 ? (totalDiff / f0) * 100 : 0;
+  const totalDiff = fN - refVal;
+  const totalPct = refVal ? (totalDiff / refVal) * 100 : 0;
 
   /* ── Plynulá Bézier krivka (Catmull-Rom) ── */
   const pts = filtered.map((d, i) => ({x: gX(i), y: gY(d.value)}));
@@ -276,37 +287,103 @@ const AreaChart = memo(({data, dark: dk}) => {
     return {label: isLast ? "Dnes" : new Date(d.date).toLocaleDateString("sk-SK",{day:"numeric",month:"short"}), pos: gX(idx)};
   });
 
-  /* ── Hover handler ── */
-  const onMove = e => {
-    if (!ref.current) return;
+  /* ── Helper: zisti index z mouse/touch pozície ── */
+  const idxFromEvent = e => {
+    if (!ref.current) return -1;
     const rect = ref.current.getBoundingClientRect();
     const cL = 48, cW = rect.width - cL;
-    const rx = e.clientX - rect.left - cL;
-    if (rx < 0 || rx > cW) { setHover(null); return; }
-    const idx = Math.min(Math.max(Math.round((rx / cW) * (filtered.length - 1)), 0), filtered.length - 1);
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const rx = clientX - rect.left - cL;
+    if (rx < 0 || rx > cW) return -1;
+    return Math.min(Math.max(Math.round((rx / cW) * (filtered.length - 1)), 0), filtered.length - 1);
+  };
+
+  /* ── Hover handler ── */
+  const onMove = e => {
+    const idx = idxFromEvent(e);
+    if (idx < 0) { setHover(null); return; }
     const d = filtered[idx];
-    const hDiff = d.value - f0, hPct = f0 ? (hDiff / f0) * 100 : 0;
+    const base = filtered[refIdx];
+    const hDiff = d.value - base.value, hPct = base.value ? (hDiff / base.value) * 100 : 0;
     setHover({...d, idx, xPos: gX(idx), yPos: gY(d.value), diff: hDiff, pct: hPct});
   };
 
+  /* ── Click = vyber compare bod ── */
+  const onClick = e => {
+    const idx = idxFromEvent(e);
+    if (idx < 0) return;
+    const newIdx = idx === compareIdx ? null : idx;
+    setCompareIdx(newIdx);
+    if (onCompare) onCompare(newIdx != null ? filtered[newIdx].date : null);
+  };
+
+  /* ── Touch handlery ── */
+  const onTouchMove = e => { e.preventDefault(); onMove(e); };
+  const onTouchEnd = () => setHover(null);
+
+  /* ── Compare dropdown: predefinované obdobia ── */
+  const setCompareByDays = (days) => {
+    const target = new Date(); target.setDate(target.getDate() - days);
+    let bestIdx = 0, bestDist = Infinity;
+    filtered.forEach((d, i) => {
+      const dist = Math.abs(new Date(d.date) - target);
+      if (dist < bestDist) { bestDist = dist; bestIdx = i; }
+    });
+    setCompareIdx(bestIdx);
+    if (onCompare) onCompare(filtered[bestIdx].date);
+    setCompareMenu(false);
+  };
+  const clearCompare = () => {
+    setCompareIdx(null);
+    if (onCompare) onCompare(null);
+    setCompareMenu(false);
+  };
+
   const gid = `ag${animKey}`;
+  const cmpGid = `cg${animKey}`;
   const ranges = [{k:"7D",l:"7D"},{k:"1M",l:"1M"},{k:"3M",l:"3M"},{k:"6M",l:"6M"},{k:"1Y",l:"1R"},{k:"ALL",l:"Všetko"}];
+  const cmpLabel = compareIdx != null ? new Date(filtered[compareIdx].date).toLocaleDateString("sk-SK",{day:"numeric",month:"short"}) : null;
 
   return (
     <div>
       {/* ── Filtre + Sumár ── */}
       <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <div className={`flex items-center gap-0.5 rounded-lg p-0.5 ${dk?"bg-slate-700":"bg-slate-100"}`}>
-          {ranges.map(r => (
-            <button key={r.k} onClick={() => setRange(r.k)}
-              className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
-                range === r.k
-                  ? (dk?"bg-slate-600 text-white shadow-sm":"bg-white text-slate-800 shadow-sm")
-                  : (dk?"text-slate-400 hover:text-white":"text-slate-500 hover:text-slate-700")
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className={`flex items-center gap-0.5 rounded-lg p-0.5 ${dk?"bg-slate-700":"bg-slate-100"}`}>
+            {ranges.map(r => (
+              <button key={r.k} onClick={() => setRange(r.k)}
+                className={`px-2.5 py-1 rounded-md text-[10px] font-bold transition-all ${
+                  range === r.k
+                    ? (dk?"bg-slate-600 text-white shadow-sm":"bg-white text-slate-800 shadow-sm")
+                    : (dk?"text-slate-400 hover:text-white":"text-slate-500 hover:text-slate-700")
+                }`}>
+                {r.l}
+              </button>
+            ))}
+          </div>
+          {/* Compare dropdown */}
+          <div className="relative">
+            <button onClick={() => setCompareMenu(!compareMenu)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                compareIdx != null
+                  ? (dk?"bg-emerald-900/50 text-emerald-400 border border-emerald-700":"bg-emerald-50 text-emerald-700 border border-emerald-200")
+                  : (dk?"bg-slate-700 text-slate-400 hover:text-white":"bg-slate-100 text-slate-500 hover:text-slate-700")
               }`}>
-              {r.l}
+              <ArrowLeftRight size={11}/>
+              {compareIdx != null ? `vs ${cmpLabel}` : "Porovnať"}
             </button>
-          ))}
+            {compareMenu && (
+              <div className={`absolute top-full left-0 mt-1 z-30 rounded-lg shadow-xl border py-1 min-w-[160px] ${dk?"bg-slate-800 border-slate-700":"bg-white border-slate-200"}`}>
+                {[{l:"Pred 7 dňami",d:7},{l:"Pred 30 dňami",d:30},{l:"Pred 90 dňami",d:90},{l:"Pred rokom",d:365},{l:"Prvý záznam",d:99999}].map(o=>(
+                  <button key={o.d} onClick={()=>setCompareByDays(o.d)} className={`w-full text-left px-3 py-1.5 text-[11px] font-medium transition-colors ${dk?"text-slate-300 hover:bg-slate-700":"text-slate-600 hover:bg-slate-50"}`}>{o.l}</button>
+                ))}
+                {compareIdx != null && <>
+                  <div className={`my-1 border-t ${dk?"border-slate-700":"border-slate-100"}`}/>
+                  <button onClick={clearCompare} className="w-full text-left px-3 py-1.5 text-[11px] font-medium text-rose-500 hover:bg-rose-50/10">Zrušiť porovnanie</button>
+                </>}
+              </div>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
           <div className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold ${dk?"bg-slate-700 text-slate-300":"bg-slate-100 text-slate-600"}`}>
@@ -321,7 +398,9 @@ const AreaChart = memo(({data, dark: dk}) => {
       </div>
 
       {/* ── Graf ── */}
-      <div className="w-full h-56 relative group select-none cursor-crosshair" ref={ref} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+      <div className="w-full h-56 relative group select-none cursor-crosshair" ref={ref}
+        onMouseMove={onMove} onMouseLeave={() => setHover(null)} onClick={onClick}
+        onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
 
         {/* Y os */}
         <div className={`absolute left-0 top-0 h-full flex flex-col justify-between text-[10px] font-medium pointer-events-none py-1 w-12 pr-2 text-right ${dk?"text-slate-500":"text-slate-400"}`}>
@@ -337,6 +416,12 @@ const AreaChart = memo(({data, dark: dk}) => {
                 <stop offset="60%" stopColor={clr} stopOpacity="0.08"/>
                 <stop offset="100%" stopColor={clr} stopOpacity="0.01"/>
               </linearGradient>
+              {compareIdx != null && (
+                <linearGradient id={cmpGid} x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.15"/>
+                  <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.02"/>
+                </linearGradient>
+              )}
             </defs>
 
             {/* Mriežka */}
@@ -344,6 +429,11 @@ const AreaChart = memo(({data, dark: dk}) => {
 
             {/* Priemer — čiarkovaná čiara */}
             <line x1="0" y1={gY(avg)} x2="100" y2={gY(avg)} stroke={dk?"#64748b":"#94a3b8"} strokeWidth="1" strokeDasharray="6 4" vectorEffect="non-scaling-stroke" opacity="0.4"/>
+
+            {/* Compare referenčná čiara */}
+            {compareIdx != null && (
+              <line x1="0" y1={gY(refVal)} x2="100" y2={gY(refVal)} stroke="#8b5cf6" strokeWidth="1" strokeDasharray="4 3" vectorEffect="non-scaling-stroke" opacity="0.5"/>
+            )}
 
             {/* Plocha */}
             <path d={areaPath} fill={`url(#${gid})`}/>
@@ -366,6 +456,15 @@ const AreaChart = memo(({data, dark: dk}) => {
             <circle cx={gX(0)} cy={gY(f0)} r="3" fill={dk?"#1e293b":"white"} stroke={clr} strokeWidth="2" vectorEffect="non-scaling-stroke"/>
             <circle cx={gX(filtered.length-1)} cy={gY(fN)} r="4" fill={clr} stroke={dk?"#1e293b":"white"} strokeWidth="2.5" vectorEffect="non-scaling-stroke"/>
 
+            {/* ── Compare pin ── */}
+            {compareIdx != null && (
+              <>
+                <line x1={gX(compareIdx)} y1="0" x2={gX(compareIdx)} y2="100" stroke="#8b5cf6" strokeWidth="1.5" strokeDasharray="4 2" vectorEffect="non-scaling-stroke" opacity="0.7"/>
+                <circle cx={gX(compareIdx)} cy={gY(refVal)} r="6" fill="#8b5cf6" stroke={dk?"#1e293b":"white"} strokeWidth="2.5" vectorEffect="non-scaling-stroke"/>
+                <circle cx={gX(compareIdx)} cy={gY(refVal)} r="2.5" fill="white" vectorEffect="non-scaling-stroke"/>
+              </>
+            )}
+
             {/* Hover kurzor */}
             {hover && <>
               <line x1={hover.xPos} y1="0" x2={hover.xPos} y2="100" stroke={dk?"#64748b":"#94a3b8"} strokeWidth="1" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" opacity="0.6"/>
@@ -386,6 +485,12 @@ const AreaChart = memo(({data, dark: dk}) => {
             <div className={`absolute text-[11px] font-medium chart-label-fade ${dk?"text-slate-500":"text-slate-400"}`} style={{right: "4px", top: `${gY(avg)}%`, transform: "translateY(-50%)"}}>
               ø {fmtC(avg)}
             </div>
+            {/* Compare pin label */}
+            {compareIdx != null && (
+              <div className="absolute text-[10px] font-bold text-purple-500 chart-label-fade" style={{left: `${gX(compareIdx)}%`, top: `${gY(refVal)}%`, transform: `translate(-50%, ${gY(refVal) < 30 ? "12px" : "-20px"})`}}>
+                {fmtC(refVal)}
+              </div>
+            )}
             {/* Koncová hodnota label */}
             <div className="absolute text-[11px] font-bold chart-label-fade" style={{color: clr, right: "-2px", top: `${gY(fN)}%`, transform: "translate(0, -50%)"}}>
               {fmtC(fN)}
@@ -406,7 +511,7 @@ const AreaChart = memo(({data, dark: dk}) => {
               <div className="text-slate-400 text-[10px] font-semibold tracking-wider mt-0.5">
                 {new Date(hover.date).toLocaleDateString("sk-SK",{day:"numeric",month:"long",year:"numeric"})}
               </div>
-              {hover.assets && (
+              {hover.assets != null && (
                 <div className="flex gap-3 mt-1.5 pt-1.5 border-t border-slate-700/50 text-[11px]">
                   <span className="text-blue-400">A: {fmtC(hover.assets)}</span>
                   <span className="text-rose-400">P: -{fmtC((hover.liab||0)+(hover.totalExp||0))}</span>
@@ -418,6 +523,9 @@ const AreaChart = memo(({data, dark: dk}) => {
                 {hover.diff >= 0 ? "+" : ""}{fmtFull(hover.diff)}
                 <span className="opacity-60">({hover.pct >= 0 ? "+" : ""}{hover.pct.toFixed(1)}%)</span>
               </div>
+              {compareIdx != null && (
+                <div className="text-[9px] text-purple-400 mt-0.5">vs {new Date(filtered[compareIdx].date).toLocaleDateString("sk-SK",{day:"numeric",month:"short"})}</div>
+              )}
             </div>
           </div>
         )}
@@ -428,6 +536,11 @@ const AreaChart = memo(({data, dark: dk}) => {
             <span key={i} className="absolute text-[10px] font-medium" style={{left: `${x.pos}%`, transform: "translateX(-50%)"}}>{x.label}</span>
           ))}
         </div>
+      </div>
+
+      {/* ── Hint ── */}
+      <div className={`text-center mt-1 text-[10px] ${dk?"text-slate-600":"text-slate-300"}`}>
+        Klikni na graf pre výber referenčného bodu porovnania
       </div>
     </div>
   );
@@ -770,6 +883,7 @@ export default function App() {
   const [stockForm, setStockForm] = useState({name:"",ticker:"",shares:"",price:""});
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyDetail, setHistoryDetail] = useState(null);
+  const [compareDate, setCompareDate] = useState(null);
   const [expDragId, setExpDragId] = useState(null);
   const [expDragOverId, setExpDragOverId] = useState(null);
   const [cashflowOpen, setCashflowOpen] = useState(false);
@@ -2197,7 +2311,55 @@ export default function App() {
               <h3 className={`text-sm font-bold ${dark?"text-white":"text-slate-700"}`}>Vývoj čistého imania</h3>
               <BarChart3 size={16} className="text-slate-400"/>
             </div>
-            <AreaChart data={history} dark={dark}/>
+            <AreaChart data={history} dark={dark} compareDate={compareDate} onCompare={setCompareDate}/>
+
+            {/* ── Porovnávací panel ── */}
+            {compareDate && (()=>{
+              const cSnap = history.find(h=>h.date===compareDate);
+              const lastSnap = history[history.length-1];
+              if(!cSnap||!lastSnap) return null;
+              const cDate = new Date(cSnap.date).toLocaleDateString("sk-SK",{day:"numeric",month:"short",year:"numeric"});
+              const rows = [
+                {l:"Čisté imanie",a:cSnap.value,b:lastSnap.value,c:"emerald"},
+                {l:"Aktíva",a:cSnap.assets,b:lastSnap.assets||metrics.assets,c:"blue"},
+                {l:"Záväzky",a:(cSnap.liab||0)+(cSnap.totalExp||0),b:(lastSnap.liab||0)+(lastSnap.totalExp||0)||metrics.liab+metrics.totalExp,c:"rose",neg:true},
+                {l:"Likvidné",a:cSnap.liquid,b:lastSnap.liquid||metrics.liquid,c:"cyan"},
+                {l:"Runway",a:cSnap.runway,b:lastSnap.runway||metrics.runway,c:"amber",suf:" mes.",raw:true},
+              ];
+              return (
+                <div className={`mt-4 rounded-xl border p-4 ${dark?"bg-slate-700/40 border-slate-600":"bg-gradient-to-r from-purple-50/50 to-blue-50/50 border-purple-100"}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <ArrowLeftRight size={14} className="text-purple-500"/>
+                      <span className={`text-xs font-bold ${dark?"text-white":"text-slate-700"}`}>Porovnanie: {cDate} → Dnes</span>
+                    </div>
+                    <button onClick={()=>setCompareDate(null)} className={`text-[10px] font-semibold px-2 py-1 rounded-lg transition-colors ${dark?"text-slate-400 hover:text-rose-400 hover:bg-slate-600":"text-slate-500 hover:text-rose-600 hover:bg-rose-50"}`}>
+                      <X size={12}/>
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    {rows.map(r=>{
+                      const diff = r.raw ? (Number(r.b)||0) - (Number(r.a)||0) : (r.b||0) - (r.a||0);
+                      const displayDiff = r.neg ? -diff : diff;
+                      const pos = displayDiff >= 0;
+                      return (
+                        <div key={r.l} className={`text-center rounded-lg p-2 ${dark?"bg-slate-800/60":"bg-white/80"}`}>
+                          <p className={`text-[10px] uppercase tracking-wider font-semibold ${dark?"text-slate-500":"text-slate-400"}`}>{r.l}</p>
+                          <div className={`flex items-center justify-center gap-1 mt-1`}>
+                            <span className={`text-[10px] tabular-nums ${dark?"text-slate-400":"text-slate-500"}`}>{r.neg?"-":""}{r.raw?(Number(r.a)||0).toFixed(1)+(r.suf||""):fmt(r.a||0)}</span>
+                            <ArrowUp size={8} className={`text-${r.c}-500 rotate-90`}/>
+                            <span className={`text-xs font-bold tabular-nums text-${r.c}-${dark?"400":"600"}`}>{r.neg?"-":""}{r.raw?(Number(r.b)||0).toFixed(1)+(r.suf||""):fmt(r.b||0)}</span>
+                          </div>
+                          <p className={`text-[11px] font-bold tabular-nums mt-0.5 ${pos?"text-emerald-500":"text-rose-500"}`}>
+                            {pos?"+":""}{r.raw?displayDiff.toFixed(1)+(r.suf||""):fmt(displayDiff)}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* ── História záznamov ── */}
             {history.length>0&&(
@@ -2271,12 +2433,18 @@ export default function App() {
                                     <MessageSquare size={11} className="inline mr-1.5 text-amber-500 -mt-0.5"/>{dayNote}
                                   </div>
                                 )}
-                                <div className="flex justify-end mt-2">
+                                <div className="flex justify-end gap-2 mt-2">
+                                  <button
+                                    onClick={(e)=>{e.stopPropagation();setCompareDate(compareDate===snap.date?null:snap.date);}}
+                                    className={`flex items-center gap-1.5 text-[10px] font-semibold transition-colors px-2 py-1 rounded-lg ${compareDate===snap.date?"text-purple-600 bg-purple-50 hover:bg-purple-100":"text-purple-500 hover:text-purple-700 hover:bg-purple-50"}`}
+                                  >
+                                    <ArrowLeftRight size={12}/> {compareDate===snap.date?"Zrušiť porovnanie":"Porovnať"}
+                                  </button>
                                   <button
                                     onClick={(e)=>{e.stopPropagation();if(!confirm(`Vymazať záznam z ${dateStr}?`))return;setHistory(prev=>prev.filter(h=>h.date!==snap.date));setHistoryDetail(null);show("Záznam vymazaný");}}
                                     className="flex items-center gap-1.5 text-[10px] font-semibold text-rose-500 hover:text-rose-700 transition-colors px-2 py-1 rounded-lg hover:bg-rose-50"
                                   >
-                                    <Trash2 size={12}/> Vymazať záznam
+                                    <Trash2 size={12}/> Vymazať
                                   </button>
                                 </div>
                               </div>
