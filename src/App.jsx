@@ -4,7 +4,7 @@ import {
   Settings, Flag, ArrowUp, ArrowDown, FileText, Save, Check, RotateCcw,
   Printer, Moon, Sun, Download, Upload, BarChart3, PieChart, Calendar,
   Clock, Edit, Box, ChevronRight, GripVertical, Coins, Repeat, Bell,
-  AlertTriangle, TrendingDown, LogOut, Mail, Lock, Eye, EyeOff, Loader2, Camera, Image, MessageSquare, ArrowUpDown, ArrowLeftRight
+  AlertTriangle, TrendingDown, LogOut, Mail, Lock, Eye, EyeOff, Loader2, Camera, Image, MessageSquare, ArrowUpDown, ArrowLeftRight, WifiOff, Search, RefreshCw
 } from "lucide-react";
 import { auth, db } from "./firebase";
 import { onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, sendPasswordResetEmail } from "firebase/auth";
@@ -147,11 +147,36 @@ function usePersistedState(key, initial) {
   return [val, setter, true];
 }
 
-const Toast = memo(({message, type="success", onClose}) => {
-  useEffect(() => { const t = setTimeout(onClose, 3000); return () => clearTimeout(t); }, [onClose]);
+const Toast = memo(({message, type="success", onClose, onUndo, undoLabel}) => {
+  const [progress, setProgress] = useState(100);
+  const dur = onUndo ? 8000 : 3000;
+  useEffect(() => {
+    const start = Date.now();
+    const iv = setInterval(() => {
+      const elapsed = Date.now() - start;
+      setProgress(Math.max(0, 100 - (elapsed / dur) * 100));
+      if (elapsed >= dur) { clearInterval(iv); onClose(); }
+    }, 50);
+    return () => clearInterval(iv);
+  }, [onClose, dur]);
+  const icon = type === "success" ? <Check size={15}/> : type === "error" ? <AlertTriangle size={15}/> : <Bell size={15}/>;
+  const cls = type === "success"
+    ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+    : type === "error"
+    ? "bg-rose-50 border-rose-200 text-rose-800"
+    : "bg-amber-50 border-amber-200 text-amber-800";
   return (
-    <div className={`fixed top-20 right-4 z-[100] px-5 py-3 rounded-xl shadow-2xl border flex items-center gap-2 text-sm font-semibold transition-all ${type==="success"?"bg-emerald-50 border-emerald-200 text-emerald-800":"bg-rose-50 border-rose-200 text-rose-800"}`}>
-      <Check size={16}/>{message}
+    <div role="alert" className={`fixed top-14 sm:top-20 right-3 sm:right-4 z-[100] rounded-xl shadow-2xl border overflow-hidden ${cls}`} style={{minWidth:"260px",maxWidth:"380px"}}>
+      <div className="flex items-center gap-2.5 px-4 py-3 text-sm font-semibold">
+        {icon}
+        <span className="flex-1">{message}</span>
+        {onUndo && (
+          <button onClick={() => { onUndo(); onClose(); }} className="ml-2 px-2.5 py-1 rounded-lg text-xs font-bold bg-white/80 hover:bg-white border border-current/20 transition-colors whitespace-nowrap">
+            {undoLabel || "Vrátiť"}
+          </button>
+        )}
+      </div>
+      <div className="h-0.5 transition-all" style={{width:`${progress}%`, backgroundColor: type==="success"?"#10b981":type==="error"?"#ef4444":"#f59e0b"}}/>
     </div>
   );
 });
@@ -548,16 +573,27 @@ const AreaChart = memo(({data, dark: dk, onCompare, compareDate}) => {
 
 const Donut = memo(({data, total, dark: dk}) => {
   const sz=200, r=80, circ=2*Math.PI*r;
+  const [hov, setHov] = useState(null);
   if(total<=0) return <div className={`h-[200px] w-[200px] flex items-center justify-center text-xs rounded-full border ${dk?"bg-slate-700/30 border-slate-600 text-slate-500":"bg-slate-50 border-slate-100 text-slate-400"}`}>Žiadne dáta</div>;
   let acc=0;
   return (
     <div className="relative flex items-center justify-center" style={{width:sz,height:sz}}>
       <svg width={sz} height={sz} className="-rotate-90"><defs><filter id="ds"><feDropShadow dx="0" dy="1" stdDeviation="2" floodOpacity="0.1"/></filter></defs>
-        {data.map((it,i)=>{const pct=it.value/total,da=pct*circ,off=acc;acc+=da;return <circle key={i} cx={sz/2} cy={sz/2} r={r} fill="none" stroke={it.color} strokeWidth="20" strokeDasharray={`${da} ${circ-da}`} strokeDashoffset={-off} filter="url(#ds)" className="transition-all duration-500 hover:opacity-80"/>;})}
+        {data.map((it,i)=>{const pct=it.value/total,da=pct*circ,off=acc;acc+=da;return <circle key={i} cx={sz/2} cy={sz/2} r={r} fill="none" stroke={it.color} strokeWidth={hov===i?24:20} strokeDasharray={`${da} ${circ-da}`} strokeDashoffset={-off} filter="url(#ds)" className="transition-all duration-300 cursor-pointer" style={{opacity:hov!=null&&hov!==i?0.4:1}} onMouseEnter={()=>setHov(i)} onMouseLeave={()=>setHov(null)}/>;})}
       </svg>
-      <div className="absolute flex flex-col items-center">
-        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Aktíva</span>
-        <span className={`text-xl font-bold ${dk?"text-white":"text-slate-800"}`}>{new Intl.NumberFormat("sk-SK",{style:"currency",currency:"EUR",notation:"compact"}).format(total)}</span>
+      <div className="absolute flex flex-col items-center pointer-events-none">
+        {hov!=null ? (
+          <>
+            <span className="text-[10px] font-bold uppercase tracking-wider" style={{color:data[hov].color}}>{data[hov].name}</span>
+            <span className={`text-lg font-extrabold ${dk?"text-white":"text-slate-800"}`}>{fmt(data[hov].value)}</span>
+            <span className="text-[10px] font-bold text-slate-400">{(data[hov].value/total*100).toFixed(1)} %</span>
+          </>
+        ) : (
+          <>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Aktíva</span>
+            <span className={`text-xl font-bold ${dk?"text-white":"text-slate-800"}`}>{new Intl.NumberFormat("sk-SK",{style:"currency",currency:"EUR",notation:"compact"}).format(total)}</span>
+          </>
+        )}
       </div>
     </div>
   );
@@ -599,7 +635,7 @@ const Transactions = ({accountId, transactions, onAdd, onDelete, dark: dk}) => {
       </div>
       {adding&&(
         <div className={`mb-3 p-3 rounded-lg space-y-2 ${dk?"bg-slate-700/50":"bg-slate-50"}`}>
-          <input type="number" placeholder="Suma (€)" value={tx.amount} onChange={e=>setTx({...tx,amount:e.target.value})} className={`w-full px-3 py-2.5 text-sm rounded-lg border outline-none focus:ring-2 focus:ring-emerald-500 ${dk?"bg-slate-700 border-slate-600 text-white placeholder-slate-400":"bg-white border-slate-200 text-slate-900"}`}/>
+          <input type="number" inputMode="decimal" placeholder="Suma (€)" value={tx.amount} onChange={e=>setTx({...tx,amount:e.target.value})} className={`w-full px-3 py-2.5 text-sm rounded-lg border outline-none focus:ring-2 focus:ring-emerald-500 ${dk?"bg-slate-700 border-slate-600 text-white placeholder-slate-400":"bg-white border-slate-200 text-slate-900"}`}/>
           <input type="text" placeholder="Popis" value={tx.description} onChange={e=>setTx({...tx,description:e.target.value})} className={`w-full px-3 py-2.5 text-sm rounded-lg border outline-none focus:ring-2 focus:ring-emerald-500 ${dk?"bg-slate-700 border-slate-600 text-white placeholder-slate-400":"bg-white border-slate-200 text-slate-900"}`}/>
           <input type="date" value={tx.date} onChange={e=>setTx({...tx,date:e.target.value})} className={`w-full px-3 py-2.5 text-sm rounded-lg border outline-none focus:ring-2 focus:ring-emerald-500 ${dk?"bg-slate-700 border-slate-600 text-white placeholder-slate-400":"bg-white border-slate-200 text-slate-900"}`}/>
           <button onClick={add} className="w-full bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-lg text-sm font-semibold">Potvrdiť</button>
@@ -621,22 +657,26 @@ const Transactions = ({accountId, transactions, onAdd, onDelete, dark: dk}) => {
   );
 };
 
-const MarketTicker = memo(({dark: dk}) => {
+const MarketTicker = memo(({dark: dk, onError}) => {
   const [markets, setMarkets] = useState([]);
   const [upd, setUpd] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   const fetchMarkets = useCallback(async () => {
     const next = [];
+    let errors = 0;
 
     // 1) Crypto — CoinGecko (BTC + ETH, EUR, 24h change)
     try {
       const r = await fetch(
         "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin,ethereum&vs_currencies=eur&include_24hr_change=true"
       );
+      if(!r.ok) throw new Error("CoinGecko " + r.status);
       const d = await r.json();
       if (d.bitcoin) next.push({ id:"btc", name:"Bitcoin", price:d.bitcoin.eur, change:d.bitcoin.eur_24h_change||0, cur:"€", decimals:0 });
       if (d.ethereum) next.push({ id:"eth", name:"Ethereum", price:d.ethereum.eur, change:d.ethereum.eur_24h_change||0, cur:"€", decimals:2 });
-    } catch {}
+    } catch { errors++; }
 
     // 2) S&P 500 + Nasdaq — Yahoo Finance (cez CORS proxy s fallback)
     const proxiedFetch = async (targetUrl) => {
@@ -669,19 +709,22 @@ const MarketTicker = memo(({dark: dk}) => {
           const chg = prev ? ((curr - prev) / prev) * 100 : 0;
           next.push({ id:idx.id, name:idx.name, price:curr, change:chg, cur:"$", decimals:2 });
         }
-      } catch {}
+      } catch { errors++; }
     }));
 
     // 3) EUR/USD — Frankfurter (ECB)
     try {
       const r = await fetch("https://api.frankfurter.app/latest?from=EUR&to=USD");
+      if(!r.ok) throw new Error("Frankfurter " + r.status);
       const d = await r.json();
       if (d.rates?.USD) next.push({ id:"eurusd", name:"EUR/USD", price:d.rates.USD, change:null, cur:"", decimals:4 });
-    } catch {}
+    } catch { errors++; }
 
-    if (next.length > 0) setMarkets(next);
+    if (next.length > 0) { setMarkets(next); setFailed(false); }
+    else if (errors > 0) { setFailed(true); if(onError) onError("Nepodarilo sa načítať trhové dáta"); }
     setUpd(new Date());
-  }, []);
+    setLoading(false);
+  }, [onError]);
 
   useEffect(() => {
     fetchMarkets();
@@ -689,14 +732,23 @@ const MarketTicker = memo(({dark: dk}) => {
     return () => clearInterval(iv);
   }, [fetchMarkets]);
 
+  const SkeletonItem = () => (
+    <div className="flex items-center gap-2 animate-pulse">
+      <div className={`h-3 w-12 rounded ${dk?"bg-slate-700":"bg-slate-200"}`}/>
+      <div className={`h-3 w-16 rounded ${dk?"bg-slate-700":"bg-slate-200"}`}/>
+      <div className={`h-4 w-10 rounded ${dk?"bg-slate-700":"bg-slate-200"}`}/>
+    </div>
+  );
+
   return (
     <div className={`fixed bottom-0 left-0 right-0 w-full backdrop-blur-xl border-t py-2 sm:py-3 z-50 print-hidden ${dk?"bg-slate-800/95 border-slate-700":"bg-white/95 border-slate-200"}`}>
       <div className="max-w-7xl mx-auto px-3 sm:px-4 flex items-center justify-between gap-3 sm:gap-6 overflow-x-auto" style={{scrollbarWidth:"none"}}>
         <div className="hidden sm:flex items-center gap-2 text-[10px] font-bold text-slate-400 uppercase tracking-widest whitespace-nowrap">
-          <div className={`w-1.5 h-1.5 rounded-full ${markets.length>0?"bg-emerald-500 animate-pulse":"bg-slate-300"}`}/>Live Markets
+          <div className={`w-1.5 h-1.5 rounded-full ${markets.length>0?"bg-emerald-500 animate-pulse":failed?"bg-rose-400":"bg-slate-300"}`}/>{failed?"Markets offline":"Live Markets"}
         </div>
         <div className="flex items-center gap-3 sm:gap-6 flex-grow justify-center min-w-max">
-          {markets.length===0&&<span className="text-xs text-slate-400">Načítavam dáta…</span>}
+          {loading&&markets.length===0&&<>{[1,2,3,4].map(i=><SkeletonItem key={i}/>)}</>}
+          {!loading&&markets.length===0&&failed&&<span className="text-xs text-rose-400">Dáta nie sú dostupné</span>}
           {markets.map(m=>(
             <div key={m.id} className="flex items-center gap-2 text-sm whitespace-nowrap">
               <span className={`font-bold text-xs ${dk?"text-slate-300":"text-slate-700"}`}>{m.name}</span>
@@ -810,7 +862,7 @@ export default function App() {
             history:[initSnap], notes:{}, dark:false, portfolio:[], cashflow:[], alerts:[], stockPortfolio:[], loginCount:1
           });
         }
-      } catch(e){ console.error("Firestore load error:",e); }
+      } catch(e){ console.error("Firestore load error:",e); show("Chyba pri načítaní dát z cloudu","error"); }
       setDataLoaded(true);
     };
     load();
@@ -824,7 +876,8 @@ export default function App() {
     saveTimer.current = setTimeout(async ()=>{
       try {
         await setDoc(doc(db,"users",user.uid),{accounts,expenses,settings,history,notes,dark,portfolio,cashflow,alerts,stockPortfolio});
-      } catch(e){ console.error("Firestore save error:",e); }
+        setLastSync(new Date());
+      } catch(e){ console.error("Firestore save error:",e); show("Chyba pri ukladaní dát","error"); }
     },1500);
   },[user,accounts,expenses,settings,history,notes,dark,portfolio,cashflow,alerts,stockPortfolio]);
 
@@ -896,6 +949,9 @@ export default function App() {
   const [alertsOpen, setAlertsOpen] = useState(false);
   const [alertForm, setAlertForm] = useState({name:"",metric:"NW",condition:"ABOVE",value:""});
   const [alertEditId, setAlertEditId] = useState(null);
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [lastSync, setLastSync] = useState(null);
+  const [accountSearch, setAccountSearch] = useState("");
 
   const fileInputRef = useRef(null);
   const portfolioFileRef = useRef(null);
@@ -908,7 +964,16 @@ export default function App() {
     if(notes[today]) setTodayNote(notes[today]);
   }, [dataLoaded, notes]);
 
-  const show = (msg, type="success") => { setToast({message:msg,type}); };
+  /* Online / Offline detekcia */
+  useEffect(() => {
+    const goOnline = () => { setIsOnline(true); show("Pripojenie obnovené", "success"); };
+    const goOffline = () => { setIsOnline(false); };
+    window.addEventListener("online", goOnline);
+    window.addEventListener("offline", goOffline);
+    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline); };
+  }, []);
+
+  const show = (msg, type="success", onUndo, undoLabel) => { setToast({message:msg, type, onUndo, undoLabel}); };
 
   /* ─── Metrics ─── */
   const metrics = useMemo(() => {
@@ -1585,7 +1650,7 @@ export default function App() {
   };
 
   const resetData = async () => {
-    if(!confirm("Naozaj chcete vymazať všetky údaje? Začnete úplne od nuly.")) return;
+    if(!confirm("Naozaj chcete vymazať VŠETKY údaje? Táto akcia sa nedá vrátiť.")) return;
     for(const k of Object.values(STORAGE_KEYS)){
       try { localStorage.removeItem(k); } catch {}
     }
@@ -1663,16 +1728,18 @@ export default function App() {
   };
 
   const deleteAccount = (id) => {
-    if(!confirm("Naozaj chcete odstrániť tento účet?")) return;
+    const deleted = accounts.find(a=>a.id===id);
+    if(!deleted) return;
     setAccounts(prev=>prev.filter(a=>a.id!==id));
     if(expanded===id) setExpanded(null);
-    show("Účet bol odstránený!");
+    show("Účet bol odstránený", "success", ()=>setAccounts(prev=>[...prev,deleted]), "Vrátiť");
   };
 
   const deleteExpense = (id) => {
-    if(!confirm("Naozaj chcete odstrániť tento výdavok?")) return;
+    const deleted = expenses.find(e=>e.id===id);
+    if(!deleted) return;
     setExpenses(prev=>prev.filter(e=>e.id!==id));
-    show("Výdavok bol odstránený!");
+    show("Výdavok bol odstránený", "success", ()=>setExpenses(prev=>[...prev,deleted]), "Vrátiť");
   };
 
   const addTransaction = (accountId, tx) => {
@@ -1819,8 +1886,9 @@ export default function App() {
   };
 
   const removeFromPortfolio = (cgId) => {
+    const deleted = portfolio.find(p => p.cgId === cgId);
     setPortfolio(prev => prev.filter(p => p.cgId !== cgId));
-    show("Coin bol odstránený z portfólia!");
+    show("Coin bol odstránený z portfólia", "success", deleted ? ()=>setPortfolio(prev=>[...prev,deleted]) : undefined, "Vrátiť");
   };
 
   /* ─── CoinGecko live ceny pre portfólio ─── */
@@ -1829,9 +1897,10 @@ export default function App() {
     const ids = portfolio.map(p => p.cgId).join(",");
     try {
       const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=eur&include_24hr_change=true`);
+      if(!r.ok) throw new Error("CoinGecko " + r.status);
       const d = await r.json();
       setCryptoPrices(d);
-    } catch {}
+    } catch(e) { console.error("Crypto price fetch error:",e); }
   }, [portfolio]);
 
   useEffect(() => {
@@ -1947,8 +2016,10 @@ export default function App() {
     setCfForm({name:item.name,amount:String(item.amount),type:item.type,category:item.category});
   };
   const deleteCf = (id) => {
+    const deleted = cashflow.find(c=>c.id===id);
+    if(!deleted) return;
     setCashflow(prev=>prev.filter(c=>c.id!==id));
-    show("Položka bola odstránená!");
+    show("Položka bola odstránená", "success", ()=>setCashflow(prev=>[...prev,deleted]), "Vrátiť");
   };
 
   /* ─── Cash-flow drag-and-drop ─── */
@@ -2021,8 +2092,10 @@ export default function App() {
     setAlertForm({name:item.name,metric:item.metric,condition:item.condition,value:String(item.value)});
   };
   const deleteAlert = (id) => {
+    const deleted = alerts.find(a=>a.id===id);
+    if(!deleted) return;
     setAlerts(prev=>prev.filter(a=>a.id!==id));
-    show("Alert bol odstránený!");
+    show("Alert bol odstránený", "success", ()=>setAlerts(prev=>[...prev,deleted]), "Vrátiť");
   };
 
   /* ─── Kontrola alertov ─── */
@@ -2206,7 +2279,12 @@ export default function App() {
 
   return (
     <div className={`min-h-screen ${dark?"bg-slate-900 text-white":"bg-gradient-to-br from-slate-50 to-slate-100"} pb-20 transition-colors duration-300`}>
-      {toast&&<Toast message={toast.message} type={toast.type} onClose={()=>setToast(null)}/>}
+      {toast&&<Toast message={toast.message} type={toast.type} onClose={()=>setToast(null)} onUndo={toast.onUndo} undoLabel={toast.undoLabel}/>}
+      {!isOnline&&(
+        <div className="fixed top-0 left-0 right-0 z-[110] bg-amber-500 text-amber-950 text-center py-2 px-4 text-xs font-bold flex items-center justify-center gap-2 shadow-lg">
+          <WifiOff size={14}/> Ste offline — zmeny sa uložia po obnovení pripojenia
+        </div>
+      )}
       <input type="file" ref={fileInputRef} accept=".json" className="hidden" onChange={importJSON}/>
 
       {/* ── HEADER ── */}
@@ -2229,6 +2307,11 @@ export default function App() {
                 {now.toLocaleTimeString("sk-SK",{hour:"2-digit",minute:"2-digit"})}
               </span>
             </div>
+            {lastSync&&(
+              <div className={`hidden lg:flex items-center gap-1.5 ml-3 px-2.5 py-1 rounded-lg text-[10px] font-medium ${dark?"text-emerald-400 bg-emerald-900/20":"text-emerald-600 bg-emerald-50"}`} title={`Posledná synchronizácia: ${lastSync.toLocaleTimeString("sk-SK")}`}>
+                <RefreshCw size={10}/> Synced {lastSync.toLocaleTimeString("sk-SK",{hour:"2-digit",minute:"2-digit"})}
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-1 sm:gap-2">
             {user&&(
@@ -2441,7 +2524,7 @@ export default function App() {
                                     <ArrowLeftRight size={12}/> {compareDate===snap.date?"Zrušiť porovnanie":"Porovnať"}
                                   </button>
                                   <button
-                                    onClick={(e)=>{e.stopPropagation();if(!confirm(`Vymazať záznam z ${dateStr}?`))return;setHistory(prev=>prev.filter(h=>h.date!==snap.date));setHistoryDetail(null);show("Záznam vymazaný");}}
+                                    onClick={(e)=>{e.stopPropagation();const deleted=snap;setHistory(prev=>prev.filter(h=>h.date!==snap.date));setHistoryDetail(null);show("Záznam vymazaný","success",()=>setHistory(prev=>[...prev,deleted].sort((a,b)=>new Date(a.date)-new Date(b.date))),"Vrátiť");}}
                                     className="flex items-center gap-1.5 text-[10px] font-semibold text-rose-500 hover:text-rose-700 transition-colors px-2 py-1 rounded-lg hover:bg-rose-50"
                                   >
                                     <Trash2 size={12}/> Vymazať
@@ -2496,10 +2579,27 @@ export default function App() {
             </button>
           </div>
 
+          {/* Vyhľadávanie účtov */}
+          {accounts.filter(a=>a.category!=="DEBT").length > 3 && (
+            <div className={`px-5 py-2.5 border-b ${dark?"border-slate-700":"border-slate-100"}`}>
+              <div className="relative">
+                <Search size={14} className={`absolute left-3 top-1/2 -translate-y-1/2 ${dark?"text-slate-500":"text-slate-400"}`}/>
+                <input
+                  type="text"
+                  value={accountSearch}
+                  onChange={e=>setAccountSearch(e.target.value)}
+                  placeholder="Hľadať účet..."
+                  className={`w-full pl-9 pr-8 py-2 text-xs rounded-lg border outline-none focus:ring-2 focus:ring-emerald-500/50 ${dark?"bg-slate-700/50 border-slate-600 text-white placeholder-slate-500":"bg-slate-50 border-slate-200 text-slate-700 placeholder-slate-400"}`}
+                />
+                {accountSearch&&<button onClick={()=>setAccountSearch("")} className={`absolute right-2.5 top-1/2 -translate-y-1/2 ${dark?"text-slate-500 hover:text-slate-300":"text-slate-400 hover:text-slate-600"}`}><X size={13}/></button>}
+              </div>
+            </div>
+          )}
+
           {/* Kategórie vnútri */}
           <div className="p-3 space-y-3">
             {(()=>{const customCats=[...new Set(accounts.filter(a=>a.category!=="DEBT"&&!BUILTIN_CATS.includes(a.category)).map(a=>a.category))];return[...BUILTIN_CATS,...customCats];})().map(cat=>{
-              const catAccs=accounts.filter(a=>a.category===cat);
+              const catAccs=accounts.filter(a=>a.category===cat&&(!accountSearch||a.name.toLowerCase().includes(accountSearch.toLowerCase())));
               if(catAccs.length===0) return null;
               const catSum=catAccs.reduce((s,a)=>s+Number(a.balance),0);
               const catPct=metrics.assets>0?(catSum/metrics.assets*100).toFixed(1):"0.0";
@@ -2612,10 +2712,10 @@ export default function App() {
                   className={`px-3 py-2.5 rounded-xl border text-xs outline-none focus:ring-2 focus:ring-indigo-500 ${dark?"bg-slate-700 border-slate-600 text-white placeholder-slate-500":"bg-slate-50 border-slate-200 text-slate-800"}`}/>
                 <input placeholder="Ticker (AAPL)" value={stockForm.ticker} onChange={e=>setStockForm({...stockForm,ticker:e.target.value})}
                   className={`px-3 py-2.5 rounded-xl border text-xs outline-none focus:ring-2 focus:ring-indigo-500 ${dark?"bg-slate-700 border-slate-600 text-white placeholder-slate-500":"bg-slate-50 border-slate-200 text-slate-800"}`}/>
-                <input type="number" placeholder="Počet ks" value={stockForm.shares} onChange={e=>setStockForm({...stockForm,shares:e.target.value})}
+                <input type="number" inputMode="decimal" min="0" placeholder="Počet ks" value={stockForm.shares} onChange={e=>setStockForm({...stockForm,shares:e.target.value})}
                   className={`px-3 py-2.5 rounded-xl border text-xs outline-none focus:ring-2 focus:ring-indigo-500 ${dark?"bg-slate-700 border-slate-600 text-white placeholder-slate-500":"bg-slate-50 border-slate-200 text-slate-800"}`}/>
                 <div className="flex gap-2">
-                  <input type="number" placeholder="Cena/ks €" value={stockForm.price} onChange={e=>setStockForm({...stockForm,price:e.target.value})}
+                  <input type="number" inputMode="decimal" min="0" placeholder="Cena/ks €" value={stockForm.price} onChange={e=>setStockForm({...stockForm,price:e.target.value})}
                     className={`flex-1 min-w-0 px-3 py-2.5 rounded-xl border text-xs outline-none focus:ring-2 focus:ring-indigo-500 ${dark?"bg-slate-700 border-slate-600 text-white placeholder-slate-500":"bg-slate-50 border-slate-200 text-slate-800"}`}/>
                   <button onClick={addStock} className="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2.5 rounded-xl text-xs font-semibold transition-all">
                     <Plus size={14}/>
@@ -2641,7 +2741,7 @@ export default function App() {
                       <div className={`text-lg font-extrabold tabular-nums ${dark?"text-white":"text-slate-800"}`}>{fmtFull(st.shares * st.price)}</div>
                       <div className="flex items-center justify-between mt-1.5">
                         <span className="text-[10px] text-slate-400 tabular-nums">1 ks = </span>
-                        <input type="number" value={st.price} onChange={e=>updateStockPrice(st.id, e.target.value)}
+                        <input type="number" inputMode="decimal" min="0" value={st.price} onChange={e=>updateStockPrice(st.id, e.target.value)}
                           className={`w-20 text-right text-[10px] font-bold px-1.5 py-0.5 rounded border outline-none ${dark?"bg-slate-600 border-slate-500 text-white":"bg-white border-slate-200 text-slate-700"}`}
                           title="Aktualizovať cenu za kus"/>
                       </div>
@@ -2713,7 +2813,7 @@ export default function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                   <input type="text" placeholder="Názov (napr. Bitcoin)" value={cryptoForm.name} onChange={e=>setCryptoForm({...cryptoForm,name:e.target.value})}
                     className={`px-3 py-2.5 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-amber-500 ${dark?"bg-slate-600 border-slate-500 text-white":"bg-white border-slate-200"}`}/>
-                  <input type="number" placeholder="Množstvo (ks)" value={cryptoForm.amount} onChange={e=>setCryptoForm({...cryptoForm,amount:e.target.value})} step="any"
+                  <input type="number" inputMode="decimal" min="0" placeholder="Množstvo (ks)" value={cryptoForm.amount} onChange={e=>setCryptoForm({...cryptoForm,amount:e.target.value})} step="any"
                     className={`px-3 py-2.5 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-amber-500 ${dark?"bg-slate-600 border-slate-500 text-white":"bg-white border-slate-200"}`}/>
                   <div className="flex gap-2">
                     <button onClick={addToPortfolioManual} className="flex-1 bg-amber-600 hover:bg-amber-700 text-white py-2 rounded-lg text-xs font-semibold transition-all">
@@ -2948,7 +3048,7 @@ export default function App() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-2">
                   <input type="text" placeholder="Názov" value={cfForm.name} onChange={e=>setCfForm({...cfForm,name:e.target.value})}
                     className={`px-3 py-2.5 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-violet-500 ${dark?"bg-slate-600 border-slate-500 text-white":"bg-white border-slate-200"}`}/>
-                  <input type="number" placeholder="Suma (€)" value={cfForm.amount} onChange={e=>setCfForm({...cfForm,amount:e.target.value})}
+                  <input type="number" inputMode="decimal" min="0" placeholder="Suma (€)" value={cfForm.amount} onChange={e=>setCfForm({...cfForm,amount:e.target.value})}
                     className={`px-3 py-2.5 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-violet-500 ${dark?"bg-slate-600 border-slate-500 text-white":"bg-white border-slate-200"}`}/>
                   <select value={cfForm.type} onChange={e=>setCfForm({...cfForm,type:e.target.value,category:e.target.value==="INCOME"?"SALARY":"RENT"})}
                     className={`px-3 py-2.5 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-violet-500 ${dark?"bg-slate-600 border-slate-500 text-white":"bg-white border-slate-200"}`}>
@@ -3190,7 +3290,7 @@ export default function App() {
                     <option value="ABOVE">dosiahne alebo prekročí</option>
                     <option value="BELOW">klesne pod</option>
                   </select>
-                  <input type="number" placeholder="Hodnota" value={alertForm.value} onChange={e=>setAlertForm({...alertForm,value:e.target.value})}
+                  <input type="number" inputMode="decimal" min="0" placeholder="Hodnota" value={alertForm.value} onChange={e=>setAlertForm({...alertForm,value:e.target.value})}
                     className={`px-3 py-2.5 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-blue-500 ${dark?"bg-slate-600 border-slate-500 text-white":"bg-white border-slate-200"}`}/>
                   <div className="flex gap-2">
                     <button onClick={saveAlert} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg text-xs font-semibold transition-all">
@@ -3297,7 +3397,7 @@ export default function App() {
               {/* 2. Zostatok / Suma */}
               <div>
                 <label className={lbl}>{modalType==="DEBT"?"Suma dlhu (€)":modalType==="ACCOUNT"?"Zostatok (€)":"Suma (€)"}</label>
-                <input type="number" step={modalType==="ACCOUNT"?"100":"1"} value={form.balance} onChange={e=>setForm({...form,balance:e.target.value})} placeholder="0" className={inp}/>
+                <input type="number" inputMode="decimal" step={modalType==="ACCOUNT"?"100":"1"} value={form.balance} onChange={e=>setForm({...form,balance:e.target.value})} placeholder="0" className={inp}/>
               </div>
               {/* 3. Kategória (ACCOUNT — bez DEBT, s vlastnými) */}
               {modalType==="ACCOUNT"&&(
@@ -3380,11 +3480,11 @@ export default function App() {
             <div className="space-y-4">
               <div>
                 <label className={`text-xs font-bold uppercase tracking-wider ${dark?"text-slate-400":"text-slate-500"}`}>Finančný cieľ (€)</label>
-                <input type="number" value={settings.financialGoal} onChange={e=>setSettings({...settings,financialGoal:Number(e.target.value)})} className={`w-full mt-1 px-4 py-2.5 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${dark?"bg-slate-700 border-slate-600 text-white":"bg-slate-50 border-slate-200 text-slate-800"}`}/>
+                <input type="number" inputMode="decimal" min="0" value={settings.financialGoal} onChange={e=>setSettings({...settings,financialGoal:Number(e.target.value)})} className={`w-full mt-1 px-4 py-2.5 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${dark?"bg-slate-700 border-slate-600 text-white":"bg-slate-50 border-slate-200 text-slate-800"}`}/>
               </div>
               <div>
                 <label className={`text-xs font-bold uppercase tracking-wider ${dark?"text-slate-400":"text-slate-500"}`}>Mesačné výdavky (€)</label>
-                <input type="number" value={settings.monthlyBurn} onChange={e=>setSettings({...settings,monthlyBurn:Number(e.target.value)})} className={`w-full mt-1 px-4 py-2.5 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${dark?"bg-slate-700 border-slate-600 text-white":"bg-slate-50 border-slate-200 text-slate-800"}`}/>
+                <input type="number" inputMode="decimal" min="0" value={settings.monthlyBurn} onChange={e=>setSettings({...settings,monthlyBurn:Number(e.target.value)})} className={`w-full mt-1 px-4 py-2.5 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${dark?"bg-slate-700 border-slate-600 text-white":"bg-slate-50 border-slate-200 text-slate-800"}`}/>
               </div>
               <hr className={`${dark?"border-slate-700":"border-slate-100"}`}/>
               <h4 className={`text-sm font-bold ${dark?"text-white":"text-slate-700"}`}>Portfóliá</h4>
@@ -3411,7 +3511,7 @@ export default function App() {
               {settings.showCrypto&&(
                 <div>
                   <label className={`text-xs font-bold uppercase tracking-wider ${dark?"text-slate-400":"text-slate-500"}`}>Nákupné náklady krypto portfólia (€)</label>
-                  <input type="number" value={settings.cryptoCostBasis||""} onChange={e=>setSettings({...settings,cryptoCostBasis:Number(e.target.value)||0})} placeholder="0 = nezobrazovať" className={`w-full mt-1 px-4 py-2.5 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${dark?"bg-slate-700 border-slate-600 text-white":"bg-slate-50 border-slate-200 text-slate-800"}`}/>
+                  <input type="number" inputMode="decimal" min="0" value={settings.cryptoCostBasis||""} onChange={e=>setSettings({...settings,cryptoCostBasis:Number(e.target.value)||0})} placeholder="0 = nezobrazovať" className={`w-full mt-1 px-4 py-2.5 rounded-xl border text-sm outline-none focus:ring-2 focus:ring-emerald-500 ${dark?"bg-slate-700 border-slate-600 text-white":"bg-slate-50 border-slate-200 text-slate-800"}`}/>
                 </div>
               )}
               {((settings.hiddenAccCats||[]).length+(settings.hiddenAccTypes||[]).length+(settings.hiddenExpCats||[]).length+(settings.hiddenCfCats||[]).length)>0&&(<>
@@ -3761,7 +3861,7 @@ export default function App() {
       </div>
 
       {/* ── MARKET TICKER ── */}
-      <MarketTicker dark={dark}/>
+      <MarketTicker dark={dark} onError={(msg)=>show(msg,"error")}/>
     </div>
   );
 }
